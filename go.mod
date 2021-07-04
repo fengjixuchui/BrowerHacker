@@ -1,4 +1,4 @@
-module BrowserHacker
+module HackerBrowser
 
 go 1.16
 
