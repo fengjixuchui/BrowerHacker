@@ -7,4 +7,4 @@ Update: I refactored the code and added the firefox browser to decrypt it, but i
 <br>
 Thank you for the project https://github.com/moonD4rk/HackBrowserData
 <br>
-I think the previous code is too messy, so I rewrite the code to facilitate the expansion of other browsers
+Update: I think the previous code is too messy, so I rewrite the code to facilitate the expansion of other browsers
