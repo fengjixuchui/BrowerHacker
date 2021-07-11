@@ -236,18 +236,24 @@ func ReturnKeyFromLocalState(state string)([]byte,error){
 		fmt.Println("Open Local State is failed ")
 		return []byte{},err
 	}
-	masterKey ,err :=  base64.StdEncoding.DecodeString(gjson.Get(string(resp),"os_crypt.encrypted_key").String())
+	encryptedKey := gjson.Get(string(resp),"os_crypt.encrypted_key")
+
+	masterKey ,err :=  base64.StdEncoding.DecodeString(encryptedKey.String())
 	if err != nil {
 		return []byte{},err
 	}
 	// 移除DPAPI
-	masterKey = masterKey[5:]
 	// 利用win32api进行解密加密的key
-	masterKey, err = WinDecypt(masterKey)
-	if err != nil {
-		return []byte{},err
+	if len(masterKey) > 5 {
+		masterKey, err = WinDecypt(masterKey[5:])
+		if err != nil {
+			return []byte{},err
+		}
+		return masterKey, nil
+	}else{
+		return []byte{}, err
 	}
-	return masterKey, nil
+
 }
 
 func DecryptPwd(pwd,masterKey []byte)([]byte,error){
@@ -258,4 +264,13 @@ func DecryptPwd(pwd,masterKey []byte)([]byte,error){
 		return []byte{},nil
 	}
 	return plain_pwd,nil
+}
+
+func ChromePass(key, encryptPass []byte) ([]byte, error) {
+	if len(encryptPass) > 15 {
+		// remove Prefix 'v10'
+		return AesGCMDeCrypt(encryptPass[15:], key, encryptPass[3:15])
+	} else {
+		return nil, fmt.Errorf("chrom pass is failed")
+	}
 }

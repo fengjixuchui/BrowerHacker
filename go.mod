@@ -1,4 +1,4 @@
-module HackerBrowser
+module BrowerHacker
 
 go 1.16
 
